@@ -21,6 +21,9 @@
     <ClCompile Include="tests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dbg_new.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="tests.h">
@@ -32,5 +35,11 @@
     <ClInclude Include="Project2Helper.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="dbg_new.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="cpp.hint" />
   </ItemGroup>
 </Project>

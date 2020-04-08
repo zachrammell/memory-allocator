@@ -1,3 +1,4 @@
+#pragma once
 /* This is a simple STL allocator
    That can be used by all STL types - vector, list, string.
    It uses malloc() to perform the actual allocation.

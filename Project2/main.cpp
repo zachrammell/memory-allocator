@@ -3,6 +3,7 @@
 
 #include "Project2Helper.h"
 #include "tests.h"
+#include "dbg_new.h"
 #include <cassert>
 
 #if defined NDEBUG
@@ -23,6 +24,7 @@ bool ImplementedWithNoThrowNew()
 // IE: project2.exe 5
 int main(int argc, char *argv[])
 {	
+	memdbg_init();
 	int scenario = 0; // Or change this line to pick a scenario
 
 	// Test Harness
