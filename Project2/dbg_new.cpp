@@ -22,11 +22,11 @@ constexpr std::size_t operator""G(std::size_t n)
 struct VirtualBlock
 {
   std::size_t page_count;
-  std::size_t block_size;
+  std::size_t block_count;
   void* pages;
   VirtualBlock(std::size_t sz = 64k)
   : page_count{0},
-    block_size{ sz / 64k + !!(sz % 64k) },
+    block_count{ sz / 64k + !!(sz % 64k) },
     pages{ VirtualAlloc(NULL, sz, MEM_RESERVE, PAGE_NOACCESS) }
   {
     if (!pages)
@@ -40,7 +40,10 @@ struct VirtualBlock
   }
   bool canFit(std::size_t bytes) const
   {
-    return bytes < (block_size - (page_count + 1) * 4k);
+    auto block_memory = block_count * 64k;
+    auto used = !!(page_count) * (page_count + 1) * 4k;
+    auto available = block_memory - used;
+    return bytes <= available;
   }
   bool isFull(void) const
   {
