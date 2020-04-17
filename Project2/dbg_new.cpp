@@ -6,6 +6,7 @@
 #include <list>
 #include <algorithm>
 
+// string logged before error messages
 constexpr static const char* log_header { "[DBG HEAP]: " };
 
 // kilobytes operator to make dealing with page sizes easier
@@ -14,11 +15,13 @@ constexpr std::size_t operator""k(std::size_t n)
   return n * 1024;
 }
 
+// gigabytes operator to make dealing with page sizes easier
 constexpr std::size_t operator""G(std::size_t n)
 {
   return n * 1024 * 1024 * 1024;
 }
 
+// class to represent a single virtual block allocation
 struct VirtualBlock
 {
   std::size_t page_count;
@@ -26,6 +29,8 @@ struct VirtualBlock
   void* pages;
   VirtualBlock(std::size_t sz = 64k)
   : page_count{0},
+    /* VirtualAlloc allocates in 64k blocks, so calculate how many blocks are used in
+       the virtual block instance. */
     block_count{ sz / 64k + !!(sz % 64k) },
     pages{ VirtualAlloc(NULL, sz, MEM_RESERVE, PAGE_NOACCESS) }
   {
@@ -34,6 +39,7 @@ struct VirtualBlock
       throw std::bad_alloc{};
     }
   }
+  /* 2 gigabyte contiguous allocations are not reasonable! */
   static bool unreasonable(std::size_t bytes)
   {
     return bytes > 2G;
@@ -41,6 +47,7 @@ struct VirtualBlock
   bool canFit(std::size_t bytes) const
   {
     auto block_memory = block_count * 64k;
+    /* If any pages are used, need at least one extra for guard paging. */
     auto used = !!(page_count) * (page_count + 1) * 4k;
     auto available = block_memory - used;
     return bytes <= available;
@@ -53,8 +60,11 @@ struct VirtualBlock
   {
     if (canFit(bytes))
     {
+      /* how many pages of size 4k are needed to fit the bytes */
       std::size_t pages_to_allocate = bytes / 4k + !!(bytes % 4k);
+      /* allocate starting at the end of the last committed allocation in the virtual block */
       void* p = VirtualAlloc((byte*)pages + (page_count * 4k), 4k * pages_to_allocate, MEM_COMMIT, PAGE_READWRITE);
+      /* virtualalloc sometimes randomly fails... */
       if (!p)
       {
         wchar_t buf[256];
@@ -65,6 +75,7 @@ struct VirtualBlock
         DEBUG_BREAKPOINT();
       }
       page_count += pages_to_allocate + 1;
+      /* offset the returned pointer so that overflow runs into the guard page */
       return (byte*)p + (4k * pages_to_allocate - bytes);
     }
     return NULL;
@@ -101,6 +112,7 @@ static std::list<VirtualBlock, Mallocator<VirtualBlock>> virtualBlocks;
 
 static void exit_cleanup(void);
 
+/* bundles an allocation with the block it is associated with, avoids searching for the block */
 struct alloc_return
 {
   void* data;
@@ -116,7 +128,7 @@ void memdbg_init()
 
 void* operator new(std::size_t sz)
 {
-  // std::printf("global op new called, size = %zu\n", sz);
+  /* reject unreasonable allocation requests */
   if (VirtualBlock::unreasonable(sz))
   {
     throw std::bad_alloc{};
@@ -125,7 +137,9 @@ void* operator new(std::size_t sz)
   void* ptr = ret.data;
   if (ptr)
   {
+    /* keep track of valid allocations */
     Allocation new_alloc{ ptr, sz, SCALAR, ret.vBlock };
+    /* maintain list sorted by pointer for faster search */
     allocs.insert(
       std::upper_bound(allocs.begin(), allocs.end(), new_alloc, alloc_predicate),
       new_alloc
@@ -133,12 +147,14 @@ void* operator new(std::size_t sz)
     return ptr;
   }
   else
+  {
     throw std::bad_alloc{};
+  }
 }
 
 void* operator new(std::size_t sz, const std::nothrow_t&) NO_THROW
 {
-  // std::printf("global op new called, size = %zu\n", sz);
+  /* reject unreasonable allocation requests */
   if (VirtualBlock::unreasonable(sz))
   {
     return NULL;
@@ -147,7 +163,9 @@ void* operator new(std::size_t sz, const std::nothrow_t&) NO_THROW
   void* ptr = ret.data;
   if (ptr)
   {
+    /* keep track of valid allocations */
     Allocation new_alloc{ ptr, sz, SCALAR, ret.vBlock };
+    /* maintain list sorted by pointer for faster search */
     allocs.insert(
       std::upper_bound(allocs.begin(), allocs.end(), new_alloc, alloc_predicate),
       new_alloc
@@ -159,7 +177,7 @@ void* operator new(std::size_t sz, const std::nothrow_t&) NO_THROW
 
 void* operator new[](std::size_t sz) 
 {
-  // std::printf("global op new[] called, size = %zu\n", sz);
+  /* reject unreasonable allocation requests */
   if (VirtualBlock::unreasonable(sz))
   {
     throw std::bad_alloc{};
@@ -168,7 +186,9 @@ void* operator new[](std::size_t sz)
   void* ptr = ret.data;
   if (ptr)
   {
+    /* keep track of valid allocations */
     Allocation new_alloc{ ptr, sz, VECTOR, ret.vBlock };
+    /* maintain list sorted by pointer for faster search */
     allocs.insert(
       std::upper_bound(allocs.begin(), allocs.end(), new_alloc, alloc_predicate),
       new_alloc
@@ -176,12 +196,14 @@ void* operator new[](std::size_t sz)
     return ptr;
   }
   else
+  {
     throw std::bad_alloc{};
+  }
 }
 
 void* operator new[](std::size_t sz, const std::nothrow_t&) NO_THROW
 {
-  // std::printf("global op new[] called, size = %zu\n", sz);
+  /* reject unreasonable allocation requests */
   if (VirtualBlock::unreasonable(sz))
   {
     return NULL;
@@ -190,7 +212,9 @@ void* operator new[](std::size_t sz, const std::nothrow_t&) NO_THROW
   void* ptr = ret.data;
   if (ptr)
   {
+    /* keep track of valid allocations */
     Allocation new_alloc{ ptr, sz, VECTOR, ret.vBlock };
+    /* maintain list sorted by pointer for faster search */
     allocs.insert(
       std::upper_bound(allocs.begin(), allocs.end(), new_alloc, alloc_predicate),
       new_alloc
@@ -202,7 +226,7 @@ void* operator new[](std::size_t sz, const std::nothrow_t&) NO_THROW
 
 void operator delete(void* addr)
 {
-  // std::printf("global op delete called, address = 0x%p\n", addr);
+  /* deleting NULL should do nothing */
   if (!addr)
   {
     return;
@@ -241,7 +265,6 @@ void operator delete(void* addr)
 
 void operator delete(void* addr, std::size_t size)
 {
-  // std::printf("global op delete called, size = %zu, address = 0x%p\n", size, addr);
   if (!addr)
   {
     return;
@@ -286,7 +309,6 @@ void operator delete(void* addr, std::size_t size)
 
 void operator delete(void* addr, const std::nothrow_t&) NO_THROW
 {
-  // std::printf("global op delete called, address = 0x%p\n", addr);
   if (!addr)
   {
     return;
@@ -325,7 +347,6 @@ void operator delete(void* addr, const std::nothrow_t&) NO_THROW
 
 void operator delete[](void* addr)
 {
-  // std::printf("global op delete[] called, address = 0x%p\n", addr);
   if (!addr)
   {
     return;
@@ -364,7 +385,6 @@ void operator delete[](void* addr)
 
 void operator delete[](void* addr, std::size_t size)
 {
-  // std::printf("global op delete[] called, size = %zu, address = 0x%p\n", size, addr);
   if (!addr)
   {
     return;
@@ -409,7 +429,6 @@ void operator delete[](void* addr, std::size_t size)
 
 void operator delete[](void* addr, const std::nothrow_t&) NO_THROW
 {
-  // std::printf("global op delete[] called, address = 0x%p\n", addr);
   Allocation dealloc{ addr, 0, VECTOR };
   auto dealloc_found = std::lower_bound(deallocs.begin(), deallocs.end(), dealloc, alloc_predicate);
   if (dealloc_found != deallocs.end() && dealloc_found->data == addr)
@@ -444,6 +463,7 @@ void operator delete[](void* addr, const std::nothrow_t&) NO_THROW
 
 static void exit_cleanup(void)
 {
+  /* if there are still allocations at the end of a program, they have been leaked. */
   if (!allocs.empty())
   {
     std::fputs(log_header, stdout);
@@ -457,24 +477,31 @@ static alloc_return alloc(std::size_t sz)
 {
   if (!sz)
   {
+    /* malloc(0) returns a valid unique pointer that doesn't need to be freed */
     return { std::malloc(0), NULL };
   }
+  /* first search all existing virtual blocks for a place to allocate */
   if (!virtualBlocks.empty())
   {
     for (VirtualBlock& vb : virtualBlocks)
     {
       void* p = NULL;
+      /* attempt to allocate. assignment in conditional intentional. */
       if (p = vb.allocate(sz))
       {
         return { p, &vb };
       }
     }
   }
+  /* couldn't find an appropriate virtual block for this allocation, need to make a new one. */
+
+  /* only construct a custom sized virtual block if the size is more than a standard block. otherwise, wasting memory. */
   if (sz > 64k)
   {
     VirtualBlock& vb = virtualBlocks.emplace_back(VirtualBlock{ sz });
     return { vb.allocate(sz), &vb };
   }
+  /* allocate a standard sized virtal block. */
   VirtualBlock& vb = virtualBlocks.emplace_back(VirtualBlock{});
   return { vb.allocate(sz), &vb };
 }

@@ -4,20 +4,21 @@
 - Cover which compilers your application targets
     - [ ] gcc [version]  
     - [ ] clang [version]  
-    - [ ] msvc/Visual Studio [version]  
+    - [X] msvc/Visual Studio [2019]  
     
 
 ## Integration  
-- Cover how to integrate the memory debugger to a new project (replace this text)
+- Copy the source files into the project and ensure they are compiled alongside the project.
 
 ## Requirements  
-- What if any code/project changes are required to add it to an existing project (replace this text)
+- memdbg_init() must be called before any memory is allocated by the progam.
 
 ## Output  
-- What is logged in the event of an error or leak (replace this text)
-- The type output file, naming convention, etc. (replace this text)
+- No output file, but informative error messages will be logged to stdout and breakpoints will be hit if a debugger is attached.
 
 ## Additional Information
 ### Areas of difficulty:
+VirtualAlloc is really difficult to debug and fails seemingly randomly.
 
 ### How many hours the project took you:
+5-6
